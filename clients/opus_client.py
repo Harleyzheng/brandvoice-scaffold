@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 
 def get_verbal_transcript(chapters: List[Dict]) -> str:

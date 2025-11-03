@@ -231,6 +231,8 @@ class JSONLConverter:
         Returns:
             Number of examples converted
         """
+        import os
+
         examples = []
 
         try:
@@ -245,13 +247,21 @@ class JSONLConverter:
                     training_example = self.csv_row_to_training_example(row)
                     examples.append(training_example)
 
+            # Create output directory and use CSV filename for the JSONL file
+            csv_basename = os.path.splitext(os.path.basename(csv_path))[0]
+            output_dir = os.path.dirname(output_path) or 'training_data'
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Use CSV filename with .jsonl extension
+            final_output_path = os.path.join(output_dir, f"{csv_basename}.jsonl")
+
             # Write to JSONL (one JSON object per line)
-            with open(output_path, 'w', encoding='utf-8') as jsonlfile:
+            with open(final_output_path, 'w', encoding='utf-8') as jsonlfile:
                 for example in examples:
                     jsonlfile.write(json.dumps(example, ensure_ascii=False) + '\n')
 
             print(f"✅ Converted {len(examples)} examples to JSONL")
-            print(f"📄 Output: {output_path}")
+            print(f"📄 Output: {final_output_path}")
 
             return len(examples)
 

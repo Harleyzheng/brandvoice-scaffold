@@ -5,8 +5,8 @@ Hybrid Transcript Extractor - Uses TikTok captions first, falls back to OpusClip
 
 import asyncio
 from typing import List, Dict, Optional
-from scraper import TikTokScraper
-from opus_client import OpusClipClient
+from scrapers.tiktok_scraper import TikTokScraper
+from clients.opus_client import OpusClipClient
 
 
 class TranscriptExtractor:

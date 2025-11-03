@@ -10,6 +10,9 @@ Workflow:
 2. Deduplicate video IDs
 3. Process videos in batches via OpusClip
 4. Generate CSV output
+5. Analyze content with LLM to suggest optimal parameters
+6. Confirm parameters with user (human-in-the-loop)
+7. Convert CSV to JSONL training data format
 
 Usage:
     python main_json.py --json reidhoffman.json --batch-size 10
@@ -20,16 +23,176 @@ import argparse
 import asyncio
 import os
 import sys
-from typing import Optional, List, Dict
+import csv
+from typing import Optional, List, Dict, Tuple
 from dotenv import load_dotenv
 
 from utils.json_processor import TikTokJSONProcessor
-from utils.transcript_extractor import TranscriptExtractor
 from utils.csv_generator import CSVGenerator
-from opus_client import OpusClipClient
+from utils.jsonl_converter import JSONLConverter
+from clients.opus_client import OpusClipClient
 
 # Load environment variables
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
+load_dotenv()
+
+
+def analyze_content_with_llm(csv_path: str, anthropic_api_key: Optional[str] = None) -> Tuple[str, int]:
+    """
+    Use Claude to analyze CSV content and suggest optimal language and max_char values.
+    
+    Args:
+        csv_path: Path to the CSV file
+        anthropic_api_key: Anthropic API key (optional, will use env var if not provided)
+    
+    Returns:
+        Tuple of (suggested_language, suggested_max_char)
+    """
+    try:
+        from anthropic import Anthropic
+        
+        api_key = anthropic_api_key or os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            print("⚠️  No Anthropic API key found. Using defaults.")
+            return ("English", 150)
+        
+        # Read sample of CSV data (first 5 rows)
+        sample_data = []
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for i, row in enumerate(reader):
+                if i >= 5:  # Only analyze first 5 videos
+                    break
+                sample_data.append({
+                    'description': row.get('description', '')[:200],  # First 200 chars
+                    'hashtags': row.get('hashtags', ''),
+                    'transcript': row.get('transcript', '')[:300]  # First 300 chars
+                })
+        
+        if not sample_data:
+            return ("English", 150)
+        
+        # Prepare prompt for Claude
+        prompt = f"""Analyze the following TikTok video data samples and suggest optimal parameters for JSONL training data conversion:
+
+Sample Data:
+{chr(10).join([f"Video {i+1}:\n  Description: {v['description']}\n  Hashtags: {v['hashtags']}\n  Transcript excerpt: {v['transcript'][:150]}..." for i, v in enumerate(sample_data)])}
+
+Based on this content, please suggest:
+1. The primary language used (e.g., English, Spanish, French, etc.)
+2. An optimal maximum character limit for TikTok descriptions (typically 100-300 characters, considering TikTok's platform and the style of these videos)
+
+Respond in JSON format:
+{{
+  "language": "detected language",
+  "max_char": recommended_number,
+  "reasoning": "brief explanation"
+}}"""
+
+        client = Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1024,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        # Parse response
+        response_text = message.content[0].text
+        
+        # Extract JSON from response (handle markdown code blocks)
+        import json
+        import re
+        
+        # Try to find JSON in code blocks first
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        if json_match:
+            response_json = json.loads(json_match.group(1))
+        else:
+            # Try to parse the whole response as JSON
+            response_json = json.loads(response_text)
+        
+        suggested_language = response_json.get('language', 'English')
+        suggested_max_char = response_json.get('max_char', 150)
+        reasoning = response_json.get('reasoning', '')
+        
+        print(f"\n🤖 AI Analysis:")
+        print(f"   Language: {suggested_language}")
+        print(f"   Max Characters: {suggested_max_char}")
+        print(f"   Reasoning: {reasoning}")
+        
+        return (suggested_language, suggested_max_char)
+        
+    except Exception as e:
+        print(f"⚠️  Error analyzing content with LLM: {e}")
+        print("   Using default values.")
+        return ("English", 150)
+
+
+def confirm_jsonl_parameters(suggested_language: str, suggested_max_char: int, 
+                            cli_language: Optional[str], cli_max_char: Optional[int],
+                            skip_interactive: bool = False) -> Tuple[str, int]:
+    """
+    Prompt user to confirm or modify JSONL conversion parameters.
+    
+    Args:
+        suggested_language: LLM-suggested language
+        suggested_max_char: LLM-suggested max character limit
+        cli_language: Language from CLI argument (if provided)
+        cli_max_char: Max char from CLI argument (if provided)
+        skip_interactive: Skip user confirmation
+    
+    Returns:
+        Tuple of (final_language, final_max_char)
+    """
+    # If CLI args were provided, use those directly
+    if cli_language is not None and cli_max_char is not None:
+        print(f"\n✅ Using CLI-provided parameters:")
+        print(f"   Language: {cli_language}")
+        print(f"   Max Characters: {cli_max_char}")
+        return (cli_language, cli_max_char)
+    
+    # Use CLI args if provided, otherwise use LLM suggestions
+    default_language = cli_language if cli_language is not None else suggested_language
+    default_max_char = cli_max_char if cli_max_char is not None else suggested_max_char
+    
+    if skip_interactive:
+        print(f"\n✅ Using suggested parameters (non-interactive mode):")
+        print(f"   Language: {default_language}")
+        print(f"   Max Characters: {default_max_char}")
+        return (default_language, default_max_char)
+    
+    print("\n" + "=" * 60)
+    print("📋 JSONL Conversion Parameters")
+    print("=" * 60)
+    print(f"Suggested Language: {default_language}")
+    print(f"Suggested Max Characters: {default_max_char}")
+    print()
+    
+    # Prompt for language
+    language_input = input(f"Enter language [{default_language}]: ").strip()
+    final_language = language_input if language_input else default_language
+    
+    # Prompt for max_char
+    while True:
+        max_char_input = input(f"Enter max characters [{default_max_char}]: ").strip()
+        if not max_char_input:
+            final_max_char = default_max_char
+            break
+        try:
+            final_max_char = int(max_char_input)
+            if final_max_char < 10:
+                print("⚠️  Max characters must be at least 10. Try again.")
+                continue
+            break
+        except ValueError:
+            print("⚠️  Please enter a valid number. Try again.")
+    
+    print(f"\n✅ Confirmed parameters:")
+    print(f"   Language: {final_language}")
+    print(f"   Max Characters: {final_max_char}")
+    
+    return (final_language, final_max_char)
 
 
 async def process_json_file(
@@ -37,10 +200,15 @@ async def process_json_file(
     count: Optional[int] = None,
     output_dir: str = "output",
     batch_size: int = 10,
-    opus_api_key: Optional[str] = None
+    opus_api_key: Optional[str] = None,
+    language: Optional[str] = None,
+    max_char: Optional[int] = None,
+    style: str = "",
+    skip_interactive: bool = False,
+    anthropic_api_key: Optional[str] = None
 ) -> str:
     """
-    Main workflow: Parse JSON → Extract transcripts → Generate CSV
+    Main workflow: Parse JSON → Extract transcripts → Generate CSV → Convert to JSONL
 
     Args:
         json_path: Path to JSON file with TikTok API response
@@ -48,6 +216,11 @@ async def process_json_file(
         output_dir: Output directory for CSV
         batch_size: Number of videos to process in parallel
         opus_api_key: OpusClip API key (optional, will use env var if not provided)
+        language: Language for JSONL training data (optional, will be suggested by LLM if not provided)
+        max_char: Max characters for description in JSONL (optional, will be suggested by LLM if not provided)
+        style: Custom style instructions for JSONL (default: "")
+        skip_interactive: Skip interactive confirmation prompts (default: False)
+        anthropic_api_key: Anthropic API key for LLM analysis (optional, will use env var if not provided)
 
     Returns:
         Path to generated CSV file
@@ -119,11 +292,44 @@ async def process_json_file(
     output_path = generator.generate_filename(channel_name, output_dir)
     csv_path = generator.generate_csv(videos_with_transcripts, output_path)
 
+    # Step 4: Analyze content and confirm JSONL parameters
+    print("\n" + "=" * 60)
+    print("STEP 4: Analyzing Content for JSONL Conversion")
+    print("=" * 60)
+
+    # Use LLM to analyze and suggest parameters
+    suggested_language, suggested_max_char = analyze_content_with_llm(csv_path, anthropic_api_key)
+    
+    # Get final parameters with user confirmation
+    final_language, final_max_char = confirm_jsonl_parameters(
+        suggested_language=suggested_language,
+        suggested_max_char=suggested_max_char,
+        cli_language=language,
+        cli_max_char=max_char,
+        skip_interactive=skip_interactive
+    )
+
+    # Step 5: Convert CSV to JSONL
+    print("\n" + "=" * 60)
+    print("STEP 5: Converting CSV to JSONL Training Data")
+    print("=" * 60)
+
+    converter = JSONLConverter(language=final_language, max_char=final_max_char, style=style)
+    
+    # Generate JSONL output path (same directory as CSV, same base name)
+    csv_dir = os.path.dirname(csv_path)
+    csv_basename = os.path.splitext(os.path.basename(csv_path))[0]
+    jsonl_path = os.path.join(csv_dir, f"{csv_basename}.jsonl")
+    
+    num_examples = converter.convert_csv_to_jsonl(csv_path, jsonl_path)
+
     print("\n" + "=" * 60)
     print("✅ COMPLETE")
     print("=" * 60)
     print(f"📄 CSV File: {csv_path}")
+    print(f"📄 JSONL File: {jsonl_path}")
     print(f"📊 Total Videos: {len(videos_with_transcripts)}")
+    print(f"📊 Training Examples: {num_examples}")
 
     return csv_path
 
@@ -272,15 +478,26 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Basic usage (interactive mode with LLM suggestions)
   python main_json.py --json reidhoffman.json
+  
+  # Specify parameters directly (skips LLM analysis)
+  python main_json.py --json reidhoffman.json --language English --max-char 150
+  
+  # Non-interactive mode (uses LLM suggestions automatically)
+  python main_json.py --json reidhoffman.json --skip-interactive
+  
+  # Process limited videos
   python main_json.py --json reidhoffman.json --count 10 --output my_data/
-  python main_json.py --json reidhoffman.json --batch-size 5
 
 Notes:
   - JSON file should contain TikTok API response with video data
   - Requires OPUSCLIP_API_KEY in .env file
+  - Optional: ANTHROPIC_API_KEY for LLM-powered parameter suggestions
   - Videos are automatically sorted by view count (descending)
   - Processing time: ~5-10 minutes per video via OpusClip
+  - LLM analyzes content to suggest optimal language and max_char values
+  - Interactive mode allows you to confirm or modify suggested parameters
         """
     )
 
@@ -319,6 +536,40 @@ Notes:
         help='OpusClip API key (optional, will use OPUSCLIP_API_KEY from .env if not provided)'
     )
 
+    parser.add_argument(
+        '--language',
+        type=str,
+        default=None,
+        help='Language for JSONL training data (optional, will be suggested by LLM if not provided)'
+    )
+
+    parser.add_argument(
+        '--max-char',
+        type=int,
+        default=None,
+        help='Max characters for description in JSONL (optional, will be suggested by LLM if not provided)'
+    )
+
+    parser.add_argument(
+        '--style',
+        type=str,
+        default='',
+        help='Custom style instructions for JSONL training data (default: none)'
+    )
+
+    parser.add_argument(
+        '--skip-interactive',
+        action='store_true',
+        help='Skip interactive confirmation prompts, use LLM suggestions or CLI defaults directly'
+    )
+
+    parser.add_argument(
+        '--anthropic-api-key',
+        type=str,
+        default=None,
+        help='Anthropic API key for LLM content analysis (optional, will use ANTHROPIC_API_KEY from .env if not provided)'
+    )
+
     args = parser.parse_args()
 
     # Check if JSON file exists
@@ -340,7 +591,12 @@ Notes:
             count=args.count,
             output_dir=args.output,
             batch_size=args.batch_size,
-            opus_api_key=api_key
+            opus_api_key=api_key,
+            language=args.language,
+            max_char=args.max_char,
+            style=args.style,
+            skip_interactive=args.skip_interactive,
+            anthropic_api_key=args.anthropic_api_key
         ))
 
         if csv_path:
