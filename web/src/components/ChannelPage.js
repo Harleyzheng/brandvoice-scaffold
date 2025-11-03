@@ -8,7 +8,6 @@ function ChannelPage() {
   const [channelData, setChannelData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     fetchChannelData();
@@ -158,112 +157,70 @@ function ChannelPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="container mx-auto px-4 py-6">
-        <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-700">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`px-4 py-2 font-medium transition-colors ${
-              activeTab === 'overview'
-                ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => setActiveTab('input')}
-            className={`px-4 py-2 font-medium transition-colors ${
-              activeTab === 'input'
-                ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
-          >
-            Input ({channelData?.input?.length || 0})
-          </button>
-          <button
-            onClick={() => setActiveTab('output')}
-            className={`px-4 py-2 font-medium transition-colors ${
-              activeTab === 'output'
-                ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
-          >
-            Output ({channelData?.output?.length || 0})
-          </button>
-          <button
-            onClick={() => setActiveTab('training')}
-            className={`px-4 py-2 font-medium transition-colors ${
-              activeTab === 'training'
-                ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
-          >
-            Training Data ({channelData?.training?.length || 0})
-          </button>
-        </div>
-
-        {/* Overview Tab */}
-        {activeTab === 'overview' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Input Files Summary */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-              <div className="flex items-center mb-4">
-                <Folder className="text-blue-600 dark:text-blue-400 mr-3" size={24} />
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Input Files</h2>
-              </div>
-              <div className="space-y-2">
-                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
-                  {channelData?.input?.reduce((sum, file) => sum + (file.videoCount || 0), 0) || 0}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Total Videos in Input</div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 mt-4">
-                  {channelData?.input?.length || 0} JSON file(s)
-                </div>
-              </div>
+      {/* Main Content */}
+      <div className="container mx-auto px-4 py-6 space-y-8">
+        {/* Overview Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Input Files Summary */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <div className="flex items-center mb-4">
+              <Folder className="text-blue-600 dark:text-blue-400 mr-3" size={24} />
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Input Files</h2>
             </div>
-
-            {/* Output Files Summary */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-              <div className="flex items-center mb-4">
-                <TrendingUp className="text-green-600 dark:text-green-400 mr-3" size={24} />
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Output Files</h2>
+            <div className="space-y-2">
+              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                {channelData?.input?.reduce((sum, file) => sum + (file.videoCount || 0), 0) || 0}
               </div>
-              <div className="space-y-2">
-                <div className="text-3xl font-bold text-green-600 dark:text-green-400">
-                  {channelData?.summary.totalVideos || 0}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Processed Videos</div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                  {channelData?.output?.reduce((sum, file) => sum + (file.totalViews || 0), 0).toLocaleString()} total views
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  {channelData?.output?.reduce((sum, file) => sum + (file.totalLikes || 0), 0).toLocaleString()} total likes
-                </div>
-              </div>
-            </div>
-
-            {/* Training Files Summary */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
-              <div className="flex items-center mb-4">
-                <Database className="text-purple-600 dark:text-purple-400 mr-3" size={24} />
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Training Data</h2>
-              </div>
-              <div className="space-y-2">
-                <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
-                  {channelData?.training?.reduce((sum, file) => sum + (file.exampleCount || 0), 0) || 0}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Training Examples</div>
-                <div className="text-sm text-gray-600 dark:text-gray-400 mt-4">
-                  {channelData?.training?.length || 0} JSONL file(s)
-                </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Total Videos in Input</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400 mt-4">
+                {channelData?.input?.length || 0} JSON file(s)
               </div>
             </div>
           </div>
-        )}
 
-        {/* Input Tab */}
-        {activeTab === 'input' && (
+          {/* Output Files Summary */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <div className="flex items-center mb-4">
+              <TrendingUp className="text-green-600 dark:text-green-400 mr-3" size={24} />
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Output Files</h2>
+            </div>
+            <div className="space-y-2">
+              <div className="text-3xl font-bold text-green-600 dark:text-green-400">
+                {channelData?.summary.totalVideos || 0}
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Processed Videos</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                {channelData?.output?.reduce((sum, file) => sum + (file.totalViews || 0), 0).toLocaleString()} total views
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                {channelData?.output?.reduce((sum, file) => sum + (file.totalLikes || 0), 0).toLocaleString()} total likes
+              </div>
+            </div>
+          </div>
+
+          {/* Training Files Summary */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+            <div className="flex items-center mb-4">
+              <Database className="text-purple-600 dark:text-purple-400 mr-3" size={24} />
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Training Data</h2>
+            </div>
+            <div className="space-y-2">
+              <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
+                {channelData?.training?.reduce((sum, file) => sum + (file.exampleCount || 0), 0) || 0}
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Training Examples</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400 mt-4">
+                {channelData?.training?.length || 0} JSONL file(s)
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Input Section */}
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+            Input Files ({channelData?.input?.length || 0})
+          </h2>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
             {channelData?.input?.length > 0 ? (
               <div className="overflow-x-auto">
@@ -328,10 +285,13 @@ function ChannelPage() {
               </div>
             )}
           </div>
-        )}
+        </div>
 
-        {/* Output Tab */}
-        {activeTab === 'output' && (
+        {/* Output Section */}
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+            Output Files ({channelData?.output?.length || 0})
+          </h2>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
             {channelData?.output?.length > 0 ? (
               <div className="overflow-x-auto">
@@ -415,10 +375,13 @@ function ChannelPage() {
               </div>
             )}
           </div>
-        )}
+        </div>
 
-        {/* Training Tab */}
-        {activeTab === 'training' && (
+        {/* Training Data Section */}
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+            Training Data ({channelData?.training?.length || 0})
+          </h2>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
             {channelData?.training?.length > 0 ? (
               <div className="overflow-x-auto">
@@ -490,7 +453,7 @@ function ChannelPage() {
               </div>
             )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
