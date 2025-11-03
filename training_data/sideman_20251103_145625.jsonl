@@ -1,1 +1,0 @@
-{"contents": [{"role": "user", "parts": [{"text": "{\"language\": \"English\", \"text\": \"Sample transcript\", \"max_char\": 150}"}]}, {"role": "model", "parts": [{"text": "{\"description\": \"Sample description\", \"hashtags\": [\"tag1\", \"tag2\"]}"}]}]}
