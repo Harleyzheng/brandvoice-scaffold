@@ -10,6 +10,9 @@ function ResultsView({ job, onNewCreator }) {
   const [showJsonlPreview, setShowJsonlPreview] = useState(false);
   const [csvPreviewData, setCsvPreviewData] = useState(null);
   const [jsonlPreviewData, setJsonlPreviewData] = useState(null);
+  const [allOutputFiles, setAllOutputFiles] = useState([]);
+  const [allTrainingFiles, setAllTrainingFiles] = useState([]);
+  const [showAllFiles, setShowAllFiles] = useState(false);
 
   const formatNumber = (num) => {
     if (num >= 1000000) {
@@ -24,6 +27,43 @@ function ResultsView({ job, onNewCreator }) {
     if (!seconds) return '0s';
     return `${seconds}s`;
   };
+
+  const formatFileSize = (bytes) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const formatDate = (isoDate) => {
+    const date = new Date(isoDate);
+    return date.toLocaleString();
+  };
+
+  // Fetch all files from output and training folders
+  React.useEffect(() => {
+    const fetchAllFiles = async () => {
+      try {
+        const [outputResponse, trainingResponse] = await Promise.all([
+          fetch('http://localhost:8000/api/files/output'),
+          fetch('http://localhost:8000/api/files/training')
+        ]);
+        
+        if (outputResponse.ok) {
+          const data = await outputResponse.json();
+          setAllOutputFiles(data.files || []);
+        }
+        
+        if (trainingResponse.ok) {
+          const data = await trainingResponse.json();
+          setAllTrainingFiles(data.files || []);
+        }
+      } catch (error) {
+        console.error('Error fetching file lists:', error);
+      }
+    };
+    
+    fetchAllFiles();
+  }, []);
 
   const handleDownload = (filename) => {
     if (!filename) {
@@ -138,89 +178,183 @@ function ResultsView({ job, onNewCreator }) {
       {/* Generated Files */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 
                     dark:border-gray-700 p-6 mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Generated Files
-        </h3>
-        
-        <div className="space-y-4">
-          {/* CSV Output */}
-          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <FileText className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                  <h4 className="font-medium text-gray-900 dark:text-white">CSV Output</h4>
-                </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                  {job.csvFilename || 'output.csv'}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleDownload(job.csvFilename)}
-                    className="text-sm px-3 py-1 bg-primary-600 text-white rounded hover:bg-primary-700 
-                             transition-colors flex items-center gap-1"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </button>
-                  <button 
-                    onClick={handlePreviewCsv}
-                    className="text-sm px-3 py-1 border border-gray-300 dark:border-gray-600 
-                                   text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 
-                                   dark:hover:bg-gray-700 transition-colors">
-                    Preview
-                  </button>
-                  <button 
-                    onClick={handleViewAllRows}
-                    className="text-sm px-3 py-1 border border-gray-300 dark:border-gray-600 
-                                   text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 
-                                   dark:hover:bg-gray-700 transition-colors">
-                    View All {job.videos?.length || 0} rows
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* JSONL Training Data */}
-          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <FileText className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                  <h4 className="font-medium text-gray-900 dark:text-white">Training Data (JSONL)</h4>
-                </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                  {job.jsonlFilename || 'training_data.jsonl'}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleDownload(job.jsonlFilename)}
-                    className="text-sm px-3 py-1 bg-primary-600 text-white rounded hover:bg-primary-700 
-                             transition-colors flex items-center gap-1"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </button>
-                  <button 
-                    onClick={handlePreviewJsonl}
-                    className="text-sm px-3 py-1 border border-gray-300 dark:border-gray-600 
-                                   text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 
-                                   dark:hover:bg-gray-700 transition-colors">
-                    Preview
-                  </button>
-                  <button 
-                    onClick={handleViewSamples}
-                    className="text-sm px-3 py-1 border border-gray-300 dark:border-gray-600 
-                                   text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 
-                                   dark:hover:bg-gray-700 transition-colors">
-                    View Samples
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Generated Files
+          </h3>
+          <button
+            onClick={() => setShowAllFiles(!showAllFiles)}
+            className="text-sm px-3 py-1 border border-gray-300 dark:border-gray-600 
+                       text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 
+                       dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+          >
+            {showAllFiles ? 'Hide All Files' : 'Show All Files'}
+            <ChevronDown className={`w-4 h-4 transition-transform ${showAllFiles ? 'rotate-180' : ''}`} />
+          </button>
         </div>
+        
+        {!showAllFiles ? (
+          <div className="space-y-4">
+            {/* Current Job Files */}
+            {/* CSV Output */}
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                    <h4 className="font-medium text-gray-900 dark:text-white">CSV Output</h4>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    {job.csvFilename || 'output.csv'}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleDownload(job.csvFilename)}
+                      className="text-sm px-3 py-1 bg-primary-600 text-white rounded hover:bg-primary-700 
+                               transition-colors flex items-center gap-1"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download
+                    </button>
+                    <button 
+                      onClick={handlePreviewCsv}
+                      className="text-sm px-3 py-1 border border-gray-300 dark:border-gray-600 
+                                     text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 
+                                     dark:hover:bg-gray-700 transition-colors">
+                      Preview
+                    </button>
+                    <button 
+                      onClick={handleViewAllRows}
+                      className="text-sm px-3 py-1 border border-gray-300 dark:border-gray-600 
+                                     text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 
+                                     dark:hover:bg-gray-700 transition-colors">
+                      View All {job.videos?.length || 0} rows
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* JSONL Training Data */}
+            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                    <h4 className="font-medium text-gray-900 dark:text-white">Training Data (JSONL)</h4>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    {job.jsonlFilename || 'training_data.jsonl'}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleDownload(job.jsonlFilename)}
+                      className="text-sm px-3 py-1 bg-primary-600 text-white rounded hover:bg-primary-700 
+                               transition-colors flex items-center gap-1"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download
+                    </button>
+                    <button 
+                      onClick={handlePreviewJsonl}
+                      className="text-sm px-3 py-1 border border-gray-300 dark:border-gray-600 
+                                     text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 
+                                     dark:hover:bg-gray-700 transition-colors">
+                      Preview
+                    </button>
+                    <button 
+                      onClick={handleViewSamples}
+                      className="text-sm px-3 py-1 border border-gray-300 dark:border-gray-600 
+                                     text-gray-700 dark:text-gray-300 rounded hover:bg-gray-100 
+                                     dark:hover:bg-gray-700 transition-colors">
+                      View Samples
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* All CSV Files */}
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-green-600 dark:text-green-400" />
+                CSV Output Files ({allOutputFiles.length})
+              </h4>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {allOutputFiles.map((file) => (
+                  <div key={file.name} className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg 
+                                                   border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {file.name}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {formatFileSize(file.size)} • {formatDate(file.modified)}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 ml-3">
+                        <button
+                          onClick={() => handleDownload(file.name)}
+                          className="text-xs px-2 py-1 bg-primary-600 text-white rounded hover:bg-primary-700 
+                                   transition-colors"
+                        >
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {allOutputFiles.length === 0 && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                    No CSV files found
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* All JSONL Files */}
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                Training Data Files ({allTrainingFiles.length})
+              </h4>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {allTrainingFiles.map((file) => (
+                  <div key={file.name} className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg 
+                                                   border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {file.name}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {formatFileSize(file.size)} • {formatDate(file.modified)}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 ml-3">
+                        <button
+                          onClick={() => handleDownload(file.name)}
+                          className="text-xs px-2 py-1 bg-primary-600 text-white rounded hover:bg-primary-700 
+                                   transition-colors"
+                        >
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {allTrainingFiles.length === 0 && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                    No JSONL files found
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Video Details */}

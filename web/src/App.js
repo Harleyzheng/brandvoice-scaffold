@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import Header from './components/Header';
 import DropZone from './components/DropZone';
 import ConfigModal from './components/ConfigModal';
@@ -6,9 +7,11 @@ import ProcessingView from './components/ProcessingView';
 import ResultsView from './components/ResultsView';
 import SettingsModal from './components/SettingsModal';
 import AIAnalysisModal from './components/AIAnalysisModal';
+import ChannelPage from './components/ChannelPage';
 import { Settings } from 'lucide-react';
 
-function App() {
+function MainApp() {
+  const navigate = useNavigate();
   const [darkMode, setDarkMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -170,28 +173,9 @@ function App() {
           <DropZone 
             onFileSelect={handleFileSelect}
             recentCreators={recentCreators}
-            onCreatorClick={async (creator) => {
-              // Fetch full creator details
-              try {
-                const response = await fetch(`http://localhost:8000/api/creator/${creator.name.toLowerCase()}`);
-                if (response.ok) {
-                  const data = await response.json();
-                  setProcessingJob({
-                    jobId: null,
-                    creatorName: data.creatorName,
-                    status: 'completed',
-                    csvFilename: data.csvFilename,
-                    jsonlFilename: data.jsonlFilename,
-                    videos: data.videos,
-                    summary: data.summary
-                  });
-                } else {
-                  alert('Failed to load creator details');
-                }
-              } catch (error) {
-                console.error('Error loading creator:', error);
-                alert('Error loading creator: ' + error.message);
-              }
+            onCreatorClick={(creator) => {
+              // Navigate to channel page
+              navigate(`/channel/${creator.name.toLowerCase()}`);
             }}
           />
         )}
@@ -240,6 +224,17 @@ function App() {
         />
       )}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<MainApp />} />
+        <Route path="/channel/:channelName" element={<ChannelPage />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
