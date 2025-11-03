@@ -40,6 +40,50 @@ def get_verbal_transcript(chapters: List[Dict]) -> str:
     
     return ''.join(verbal_parts)
 
+
+def get_enhanced_transcript(chapters: List[Dict]) -> str:
+    """
+    Extract enhanced transcript from screenplay chapters including visual context.
+    
+    This function extracts:
+    - Chapter summaries (prepended to each chapter)
+    - Visual line descriptions (type: "visual")
+    - Verbal content (type: "verbal")
+    
+    All combined with visual descriptions prefixed by "[Visual: ...]".
+    
+    Args:
+        chapters: List of chapter dicts with 'lines' arrays and optional 'summary'
+        
+    Returns:
+        Combined enhanced transcript with visual context
+    """
+    if not chapters:
+        return ""
+    
+    parts = []
+    for chapter in chapters:
+        # Add chapter summary if present
+        summary = chapter.get('summary', '').strip()
+        if summary:
+            parts.append(f"[Visual: {summary}]")
+        
+        # Process lines in order
+        lines = chapter.get('lines', [])
+        for line in lines:
+            line_type = line.get('type')
+            content = line.get('content', '').strip()
+            
+            if not content:
+                continue
+            
+            if line_type == 'verbal':
+                parts.append(content)
+            elif line_type == 'visual':
+                parts.append(f"[Visual: {content}]")
+    
+    return ' '.join(parts)
+
 class OpusClipClient:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv('OPUSCLIP_API_KEY')
@@ -205,8 +249,10 @@ class OpusClipClient:
                 if stage == 'COMPLETE':
                     print(f"✅ Project {project_id} completed")
                     return True
-                elif stage in ['FAILED', 'ERROR']:
+                elif stage in ['FAILED', 'ERROR', 'STALLED']:
                     print(f"❌ Project {project_id} failed with stage: {stage}")
+                    if stage == 'STALLED':
+                        print(f"   ⏭️  Skipping stalled project - continuing with other projects")
                     print(f"   Error response: {status}")
                     return False
 
@@ -273,6 +319,43 @@ class OpusClipClient:
         # Get chapters from screenplay and use the standalone function
         chapters = screenplay.get('chapters', [])
         return get_verbal_transcript(chapters)
+
+    def extract_enhanced_transcript_from_screenplay(self, screenplay: Dict) -> str:
+        """
+        Extract enhanced transcript with visual context from screenplay JSON.
+        
+        This method extracts:
+        - Chapter summaries (prepended to each chapter)
+        - Visual line descriptions (type: "visual")
+        - Verbal content (type: "verbal")
+        
+        The screenplay structure from OpusClip API:
+        {
+            "chapters": [
+                {
+                    "summary": "chapter visual description",
+                    "lines": [
+                        {"type": "verbal", "content": "text here"},
+                        {"type": "visual", "content": "visual description"},
+                        ...
+                    ]
+                },
+                ...
+            ]
+        }
+
+        Args:
+            screenplay: Screenplay dict with chapters structure
+
+        Returns:
+            Combined enhanced transcript with visual context
+        """
+        if not screenplay:
+            return ""
+        
+        # Get chapters from screenplay and use the enhanced extraction function
+        chapters = screenplay.get('chapters', [])
+        return get_enhanced_transcript(chapters)
 
     def get_transcript_from_video(self, video_url: str, max_wait_seconds: int = 600) -> Optional[str]:
         """

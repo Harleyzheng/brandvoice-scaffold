@@ -36,23 +36,23 @@ from clients.opus_client import OpusClipClient
 load_dotenv()
 
 
-def analyze_content_with_llm(csv_path: str, anthropic_api_key: Optional[str] = None) -> Tuple[str, int]:
+def analyze_content_with_llm(csv_path: str, openai_api_key: Optional[str] = None) -> Tuple[str, int]:
     """
-    Use Claude to analyze CSV content and suggest optimal language and max_char values.
+    Use GPT-5 to analyze CSV content and suggest optimal language and max_char values.
     
     Args:
         csv_path: Path to the CSV file
-        anthropic_api_key: Anthropic API key (optional, will use env var if not provided)
+        openai_api_key: OpenAI API key (optional, will use env var if not provided)
     
     Returns:
         Tuple of (suggested_language, suggested_max_char)
     """
     try:
-        from anthropic import Anthropic
+        from openai import OpenAI
         
-        api_key = anthropic_api_key or os.getenv('ANTHROPIC_API_KEY')
+        api_key = openai_api_key or os.getenv('OPENAI_API_KEY')
         if not api_key:
-            print("⚠️  No Anthropic API key found. Using defaults.")
+            print("⚠️  No OpenAI API key found. Using defaults.")
             return ("English", 150)
         
         # Read sample of CSV data (first 5 rows)
@@ -72,10 +72,13 @@ def analyze_content_with_llm(csv_path: str, anthropic_api_key: Optional[str] = N
             return ("English", 150)
         
         # Prepare prompt for Claude
+        newline = '\n'
+        sample_text = newline.join([f"Video {i+1}:{newline}  Description: {v['description']}{newline}  Hashtags: {v['hashtags']}{newline}  Transcript excerpt: {v['transcript'][:150]}..." for i, v in enumerate(sample_data)])
+        
         prompt = f"""Analyze the following TikTok video data samples and suggest optimal parameters for JSONL training data conversion:
 
 Sample Data:
-{chr(10).join([f"Video {i+1}:\n  Description: {v['description']}\n  Hashtags: {v['hashtags']}\n  Transcript excerpt: {v['transcript'][:150]}..." for i, v in enumerate(sample_data)])}
+{sample_text}
 
 Based on this content, please suggest:
 1. The primary language used (e.g., English, Spanish, French, etc.)
@@ -88,17 +91,17 @@ Respond in JSON format:
   "reasoning": "brief explanation"
 }}"""
 
-        client = Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=1024,
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-5",
+            max_completion_tokens=1024,
             messages=[
                 {"role": "user", "content": prompt}
             ]
         )
         
         # Parse response
-        response_text = message.content[0].text
+        response_text = response.choices[0].message.content
         
         # Extract JSON from response (handle markdown code blocks)
         import json
@@ -131,7 +134,8 @@ Respond in JSON format:
 
 def confirm_jsonl_parameters(suggested_language: str, suggested_max_char: int, 
                             cli_language: Optional[str], cli_max_char: Optional[int],
-                            skip_interactive: bool = False) -> Tuple[str, int]:
+                            skip_interactive: bool = False,
+                            auto_confirm: Optional[str] = None) -> Tuple[str, int]:
     """
     Prompt user to confirm or modify JSONL conversion parameters.
     
@@ -141,6 +145,7 @@ def confirm_jsonl_parameters(suggested_language: str, suggested_max_char: int,
         cli_language: Language from CLI argument (if provided)
         cli_max_char: Max char from CLI argument (if provided)
         skip_interactive: Skip user confirmation
+        auto_confirm: If provided (any truthy value), automatically confirm suggested parameters
     
     Returns:
         Tuple of (final_language, final_max_char)
@@ -169,7 +174,24 @@ def confirm_jsonl_parameters(suggested_language: str, suggested_max_char: int,
     print(f"Suggested Max Characters: {default_max_char}")
     print()
     
-    # Prompt for language
+    # If auto_confirm is provided, use suggested parameters without prompting
+    if auto_confirm:
+        print("✅ Auto-confirming suggested parameters")
+        print(f"   Language: {default_language}")
+        print(f"   Max Characters: {default_max_char}")
+        return (default_language, default_max_char)
+    
+    # Ask user if they want to use the suggested values
+    confirm_input = input("Do you want to use these suggested values? (y/n) [y]: ").strip().lower()
+    
+    if confirm_input in ['', 'y', 'yes']:
+        print(f"\n✅ Using suggested parameters:")
+        print(f"   Language: {default_language}")
+        print(f"   Max Characters: {default_max_char}")
+        return (default_language, default_max_char)
+    
+    # User wants to override, prompt for language
+    print("\n📝 Enter custom parameters:")
     language_input = input(f"Enter language [{default_language}]: ").strip()
     final_language = language_input if language_input else default_language
     
@@ -205,7 +227,8 @@ async def process_json_file(
     max_char: Optional[int] = None,
     style: str = "",
     skip_interactive: bool = False,
-    anthropic_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None,
+    auto_confirm: Optional[str] = None
 ) -> str:
     """
     Main workflow: Parse JSON → Extract transcripts → Generate CSV → Convert to JSONL
@@ -220,7 +243,8 @@ async def process_json_file(
         max_char: Max characters for description in JSONL (optional, will be suggested by LLM if not provided)
         style: Custom style instructions for JSONL (default: "")
         skip_interactive: Skip interactive confirmation prompts (default: False)
-        anthropic_api_key: Anthropic API key for LLM analysis (optional, will use env var if not provided)
+        openai_api_key: OpenAI API key for LLM analysis (optional, will use env var if not provided)
+        auto_confirm: If provided, automatically confirm suggested parameters (default: None)
 
     Returns:
         Path to generated CSV file
@@ -267,6 +291,46 @@ async def process_json_file(
     if len(videos) > 5:
         print(f"  ... and {len(videos) - 5} more")
 
+    # De-duplication: Check for already processed videos
+    print("\n" + "=" * 60)
+    print("CHECKING FOR DUPLICATE VIDEOS")
+    print("=" * 60)
+    
+    generator = CSVGenerator()
+    existing_video_ids = generator.get_existing_video_ids(channel_name, output_dir)
+    
+    if existing_video_ids:
+        print(f"\n📋 Found {len(existing_video_ids)} existing video(s) in previous CSV files")
+        
+        # Track which videos to skip
+        skipped_videos = []
+        new_videos = []
+        
+        for video in videos:
+            video_id = video['video_id']
+            if video_id in existing_video_ids:
+                skipped_videos.append(video)
+            else:
+                new_videos.append(video)
+        
+        # Log skipped videos
+        if skipped_videos:
+            print(f"\n⏭️  Skipping {len(skipped_videos)} duplicate video(s):")
+            for video in skipped_videos:
+                print(f"  - Video ID: {video['video_id']} ({video.get('view_count', 0):,} views)")
+                print(f"    {video.get('description', '')[:60]}...")
+        
+        # Update videos list to only include new videos
+        videos = new_videos
+        
+        if not videos:
+            print("\n✅ All videos have already been processed. Nothing new to process.")
+            return ""
+        
+        print(f"\n✅ Processing {len(videos)} new video(s)")
+    else:
+        print("\n✅ No existing CSV files found. Processing all videos.")
+
     # Step 2: Extract transcripts via OpusClip
     print("\n" + "=" * 60)
     print("STEP 2: Extracting Transcripts via OpusClip")
@@ -288,7 +352,9 @@ async def process_json_file(
     print("STEP 3: Generating CSV")
     print("=" * 60)
 
-    generator = CSVGenerator()
+    # Reuse generator from de-duplication check (or create if somehow not defined)
+    if 'generator' not in locals():
+        generator = CSVGenerator()
     output_path = generator.generate_filename(channel_name, output_dir)
     csv_path = generator.generate_csv(videos_with_transcripts, output_path)
 
@@ -298,7 +364,7 @@ async def process_json_file(
     print("=" * 60)
 
     # Use LLM to analyze and suggest parameters
-    suggested_language, suggested_max_char = analyze_content_with_llm(csv_path, anthropic_api_key)
+    suggested_language, suggested_max_char = analyze_content_with_llm(csv_path, openai_api_key)
     
     # Get final parameters with user confirmation
     final_language, final_max_char = confirm_jsonl_parameters(
@@ -306,7 +372,8 @@ async def process_json_file(
         suggested_max_char=suggested_max_char,
         cli_language=language,
         cli_max_char=max_char,
-        skip_interactive=skip_interactive
+        skip_interactive=skip_interactive,
+        auto_confirm=auto_confirm
     )
 
     # Step 5: Convert CSV to JSONL
@@ -316,10 +383,11 @@ async def process_json_file(
 
     converter = JSONLConverter(language=final_language, max_char=final_max_char, style=style)
     
-    # Generate JSONL output path (same directory as CSV, same base name)
-    csv_dir = os.path.dirname(csv_path)
+    # Generate JSONL output path in training_data directory
+    jsonl_dir = "training_data"
+    os.makedirs(jsonl_dir, exist_ok=True)
     csv_basename = os.path.splitext(os.path.basename(csv_path))[0]
-    jsonl_path = os.path.join(csv_dir, f"{csv_basename}.jsonl")
+    jsonl_path = os.path.join(jsonl_dir, f"{csv_basename}.jsonl")
     
     num_examples = converter.convert_csv_to_jsonl(csv_path, jsonl_path)
 
@@ -435,7 +503,7 @@ async def process_videos_with_opusclip(
                 print(f"   Available keys: {list(first_clip.keys())}")
                 return None
             
-            transcript = opus_client.extract_transcript_from_screenplay(screenplay)
+            transcript = opus_client.extract_enhanced_transcript_from_screenplay(screenplay)
 
             if transcript:
                 video['transcript'] = transcript
@@ -481,6 +549,9 @@ Examples:
   # Basic usage (interactive mode with LLM suggestions)
   python main_json.py --json reidhoffman.json
   
+  # Auto-confirm suggested parameters (shows suggestions but doesn't ask for confirmation)
+  python main_json.py --json reidhoffman.json --auto-confirm yes
+  
   # Specify parameters directly (skips LLM analysis)
   python main_json.py --json reidhoffman.json --language English --max-char 150
   
@@ -493,11 +564,12 @@ Examples:
 Notes:
   - JSON file should contain TikTok API response with video data
   - Requires OPUSCLIP_API_KEY in .env file
-  - Optional: ANTHROPIC_API_KEY for LLM-powered parameter suggestions
+  - Optional: OPENAI_API_KEY for LLM-powered parameter suggestions
   - Videos are automatically sorted by view count (descending)
   - Processing time: ~5-10 minutes per video via OpusClip
   - LLM analyzes content to suggest optimal language and max_char values
   - Interactive mode allows you to confirm or modify suggested parameters
+  - Use --auto-confirm to skip the confirmation prompt and use suggested values
         """
     )
 
@@ -564,10 +636,17 @@ Notes:
     )
 
     parser.add_argument(
-        '--anthropic-api-key',
+        '--auto-confirm',
         type=str,
         default=None,
-        help='Anthropic API key for LLM content analysis (optional, will use ANTHROPIC_API_KEY from .env if not provided)'
+        help='Automatically confirm suggested parameters without prompting (pass any value to enable)'
+    )
+
+    parser.add_argument(
+        '--openai-api-key',
+        type=str,
+        default=None,
+        help='OpenAI API key for LLM content analysis (optional, will use OPENAI_API_KEY from .env if not provided)'
     )
 
     args = parser.parse_args()
@@ -596,7 +675,8 @@ Notes:
             max_char=args.max_char,
             style=args.style,
             skip_interactive=args.skip_interactive,
-            anthropic_api_key=args.anthropic_api_key
+            openai_api_key=args.openai_api_key,
+            auto_confirm=args.auto_confirm
         ))
 
         if csv_path:

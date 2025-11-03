@@ -5,7 +5,8 @@ CSV Generator for TikTok scraping results
 
 import csv
 import os
-from typing import List, Dict
+import glob
+from typing import List, Dict, Set
 from datetime import datetime
 
 
@@ -126,6 +127,56 @@ class CSVGenerator:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{username}_{timestamp}.csv"
         return os.path.join(output_dir, filename)
+
+    def get_existing_video_ids(self, channel_name: str, output_dir: str = "output") -> Set[str]:
+        """
+        Get all video IDs that have already been processed for a channel.
+        
+        Searches for all CSV files matching {channel_name}_*.csv pattern
+        and extracts all video IDs from them.
+
+        Args:
+            channel_name: TikTok channel/username
+            output_dir: Output directory containing CSV files
+
+        Returns:
+            Set of video IDs that have already been processed
+        """
+        existing_ids = set()
+        
+        # Check if output directory exists
+        if not os.path.exists(output_dir):
+            return existing_ids
+        
+        # Find all CSV files matching the channel pattern
+        pattern = os.path.join(output_dir, f"{channel_name}_*.csv")
+        csv_files = glob.glob(pattern)
+        
+        if not csv_files:
+            return existing_ids
+        
+        # Read each CSV file and extract video IDs
+        for csv_file in csv_files:
+            try:
+                with open(csv_file, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    
+                    # Check if video_id column exists
+                    if 'video_id' not in reader.fieldnames:
+                        print(f"⚠️  Warning: No 'video_id' column in {os.path.basename(csv_file)}")
+                        continue
+                    
+                    # Extract all video IDs
+                    for row in reader:
+                        video_id = row.get('video_id', '').strip()
+                        if video_id:
+                            existing_ids.add(video_id)
+                            
+            except Exception as e:
+                print(f"⚠️  Warning: Error reading {os.path.basename(csv_file)}: {e}")
+                continue
+        
+        return existing_ids
 
 
 def test_csv_generator():
